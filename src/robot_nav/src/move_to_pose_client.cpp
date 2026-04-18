@@ -45,8 +45,8 @@ private:
 
     MoveToPose::Goal goal_msg;
 
-    // UI still has to be implemented
-    goal_msg.target_pose.header.frame_id = "map";
+    //  changed to odom
+    goal_msg.target_pose.header.frame_id = "odom";  
     goal_msg.target_pose.header.stamp = this->now();
 
     goal_msg.target_pose.pose.position.x = 2.0;
