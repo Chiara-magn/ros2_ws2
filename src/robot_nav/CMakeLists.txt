@@ -9,7 +9,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
-find_package(rclcpp_default_generators REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
@@ -66,11 +66,11 @@ rosidl_target_interfaces(move_to_pose_client
 
 # Components registrations
 rclcpp_components_register_nodes(navigation_server
-  "robot_navigation_assignment::NavigationServer"
+  "robot_nav::NavigationServer"
 )
 
 rclcpp_components_register_nodes(move_to_pose_client
-  "robot_navigation_assignment::MoveToPoseClient"
+  "robot_nav::MoveToPoseClient"
 )
 
 # installations
