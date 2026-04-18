@@ -1,4 +1,11 @@
+# robot package
+src/bme_gazebo_sensors-rt2/
+
+# generated TF frames
+*.pdf
+*.gv
+
+# build files
 build/
 install/
 log/
-.colcon/
