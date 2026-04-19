@@ -46,6 +46,9 @@ public:
 private:
   rclcpp_action::Server<MoveToPose>::SharedPtr action_server_;
 
+  // Track current active goal for preemption
+  std::shared_ptr<GoalHandleMoveToPose> current_goal_handle_;
+
   // added: current pose variables
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   double current_x_ = 0.0;
@@ -90,13 +93,28 @@ private:
     return rclcpp_action::CancelResponse::ACCEPT;
   }
 
-  void handle_accepted(
-    const std::shared_ptr<GoalHandleMoveToPose> goal_handle)
-  {
-    std::thread{
-      std::bind(&NavigationServer::execute, this, goal_handle)
-    }.detach();
+// modification to handle goal preemption
+void handle_accepted(
+  const std::shared_ptr<GoalHandleMoveToPose> goal_handle)
+{
+  // abort active goal if a new one arrives
+  if (current_goal_handle_ && current_goal_handle_->is_active()) {
+    auto result = std::make_shared<MoveToPose::Result>();
+    result->success = false;
+    current_goal_handle_->abort(result);
+
+    RCLCPP_WARN(this->get_logger(),
+      "Previous goal aborted due to preemption");
   }
+
+  // Update current goal
+  current_goal_handle_ = goal_handle;
+
+  // Execute new goal in a separate thread
+  std::thread{
+    std::bind(&NavigationServer::execute, this, goal_handle)
+  }.detach();
+}
 
   void execute(
     const std::shared_ptr<GoalHandleMoveToPose> goal_handle)
@@ -118,6 +136,13 @@ private:
 
         result->success = false;
         goal_handle->canceled(result);
+        return;
+      }
+
+      // preemption control, stop robot motion
+      if (current_goal_handle_.get() != goal_handle.get()) {
+        geometry_msgs::msg::Twist stop;
+        cmd_vel_pub_->publish(stop);
         return;
       }
 
