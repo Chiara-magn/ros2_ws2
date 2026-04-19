@@ -100,6 +100,7 @@ A dedicated launch file is provided to automatically start action components and
 ros2 launch robot_nav start_components.launch.py
 ```
 This launch file does **not** start the UI node, since it requires keyboard input and must be run manually.
+
 ---
 
 ## **How to Run the Full System**
