@@ -6,6 +6,9 @@
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "robot_nav/action/move_to_pose.hpp"
 
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+
 namespace robot_nav
 {
 
@@ -24,22 +27,19 @@ public:
 
     RCLCPP_INFO(this->get_logger(), "MoveToPose client ready");
 
-    // added subscription to /goal_pose 
+    // subscription to /goal_pose 
     goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-    "/goal_pose",
-    10,
-    std::bind(&MoveToPoseClient::goal_callback, this, std::placeholders::_1)
+      "/goal_pose",
+      10,
+      std::bind(&MoveToPoseClient::goal_callback, this, std::placeholders::_1)
     );
-
   }
 
 private:
   rclcpp_action::Client<MoveToPose>::SharedPtr client_;
-  rclcpp::TimerBase::SharedPtr timer_;
-  // added subscription to /goal_pose 
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_sub_;
 
-  void send_goal(double x,double y)
+  void send_goal(double x, double y)
   {
     if (!client_->wait_for_action_server(std::chrono::seconds(5)))
     {
@@ -49,7 +49,6 @@ private:
 
     MoveToPose::Goal goal_msg;
 
-    //  changed to odom
     goal_msg.target_pose.header.frame_id = "odom";  
     goal_msg.target_pose.header.stamp = this->now();
 
@@ -57,11 +56,13 @@ private:
     goal_msg.target_pose.pose.position.y = y;
     goal_msg.target_pose.pose.position.z = 0.0;
 
-    goal_msg.target_pose.pose.orientation.w = 1.0;
+    //  tf2 quanternions conversion 
+    tf2::Quaternion q;
+    q.setRPY(0.0, 0.0, 0.0);  // yaw = 0 per ora
+    goal_msg.target_pose.pose.orientation = tf2::toMsg(q);
 
-    // goal positions are based on UI data
     RCLCPP_INFO(this->get_logger(),
-    "Sending goal: x = %.2f y = %.2f", x, y);
+      "Sending goal: x = %.2f y = %.2f", x, y);
 
     auto options = rclcpp_action::Client<MoveToPose>::SendGoalOptions();
 
@@ -78,15 +79,13 @@ private:
     client_->async_send_goal(goal_msg, options);
   }
 
-  // callbacks
-  // added callback to send goals recived by navigation_ui
-    void goal_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+  // callback from UI
+  void goal_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
   {
-      // estrai x, y
-      double x = msg->pose.position.x;
-      double y = msg->pose.position.y;
+    double x = msg->pose.position.x;
+    double y = msg->pose.position.y;
 
-      send_goal(x, y);
+    send_goal(x, y);
   }
 
   void goal_response_callback(
@@ -134,3 +133,4 @@ private:
 
 #include "rclcpp_components/register_node_macro.hpp"
 RCLCPP_COMPONENTS_REGISTER_NODE(robot_nav::MoveToPoseClient)
+

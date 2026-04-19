@@ -11,6 +11,9 @@
 
 #include "robot_nav/action/move_to_pose.hpp"
 
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Matrix3x3.h>
+
 namespace robot_nav
 {
 
@@ -25,10 +28,8 @@ public:
   {
     RCLCPP_INFO(this->get_logger(), "NavigationServer active");
 
-    // cmd_vel publisher to control robot velocity
     cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
 
-    // added: subscription /odom 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
       "/odom", 10,
       std::bind(&NavigationServer::odom_callback, this, std::placeholders::_1)
@@ -45,11 +46,8 @@ public:
 
 private:
   rclcpp_action::Server<MoveToPose>::SharedPtr action_server_;
-
-  // Track current active goal for preemption
   std::shared_ptr<GoalHandleMoveToPose> current_goal_handle_;
 
-  // added: current pose variables
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   double current_x_ = 0.0;
   double current_y_ = 0.0;
@@ -57,17 +55,22 @@ private:
 
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
 
-  // added: callback odom 
   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
   {
     current_x_ = msg->pose.pose.position.x;
     current_y_ = msg->pose.pose.position.y;
 
-    // estrai yaw dal quaternion
-    auto q = msg->pose.pose.orientation;
-    double siny_cosp = 2 * (q.w * q.z + q.x * q.y);
-    double cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z);
-    current_yaw_ = std::atan2(siny_cosp, cosy_cosp);
+    // tf2 yaw extraction
+    tf2::Quaternion q(
+      msg->pose.pose.orientation.x,
+      msg->pose.pose.orientation.y,
+      msg->pose.pose.orientation.z,
+      msg->pose.pose.orientation.w
+    );
+
+    double roll, pitch, yaw;
+    tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+    current_yaw_ = yaw;
   }
 
   rclcpp_action::GoalResponse handle_goal(
@@ -93,28 +96,24 @@ private:
     return rclcpp_action::CancelResponse::ACCEPT;
   }
 
-// modification to handle goal preemption
-void handle_accepted(
-  const std::shared_ptr<GoalHandleMoveToPose> goal_handle)
-{
-  // abort active goal if a new one arrives
-  if (current_goal_handle_ && current_goal_handle_->is_active()) {
-    auto result = std::make_shared<MoveToPose::Result>();
-    result->success = false;
-    current_goal_handle_->abort(result);
+  void handle_accepted(
+    const std::shared_ptr<GoalHandleMoveToPose> goal_handle)
+  {
+    if (current_goal_handle_ && current_goal_handle_->is_active()) {
+      auto result = std::make_shared<MoveToPose::Result>();
+      result->success = false;
+      current_goal_handle_->abort(result);
 
-    RCLCPP_WARN(this->get_logger(),
-      "Previous goal aborted due to preemption");
+      RCLCPP_WARN(this->get_logger(),
+        "Previous goal aborted due to preemption");
+    }
+
+    current_goal_handle_ = goal_handle;
+
+    std::thread{
+      std::bind(&NavigationServer::execute, this, goal_handle)
+    }.detach();
   }
-
-  // Update current goal
-  current_goal_handle_ = goal_handle;
-
-  // Execute new goal in a separate thread
-  std::thread{
-    std::bind(&NavigationServer::execute, this, goal_handle)
-  }.detach();
-}
 
   void execute(
     const std::shared_ptr<GoalHandleMoveToPose> goal_handle)
@@ -139,15 +138,12 @@ void handle_accepted(
         return;
       }
 
-      // preemption control, stop robot motion
       if (current_goal_handle_.get() != goal_handle.get()) {
         geometry_msgs::msg::Twist stop;
         cmd_vel_pub_->publish(stop);
         return;
       }
 
-      // removed lookupTransform("map", "base_link") 
-      // inserted/odom 
       double x = current_x_;
       double y = current_y_;
 
@@ -159,13 +155,11 @@ void handle_accepted(
 
       double distance = std::sqrt(dx*dx + dy*dy);
 
-      // feedback
-      feedback->current_pose.header.frame_id = "odom";   // *** CAMBIATO ***
+      feedback->current_pose.header.frame_id = "odom";
       feedback->current_pose.pose.position.x = x;
       feedback->current_pose.pose.position.y = y;
       goal_handle->publish_feedback(feedback);
 
-      // stop condition
       if (distance < 0.1)
       {
         geometry_msgs::msg::Twist stop;
@@ -177,7 +171,6 @@ void handle_accepted(
         return;
       }
 
-      // proportional controller
       double angle_to_goal = std::atan2(dy, dx);
 
       geometry_msgs::msg::Twist cmd;
@@ -195,3 +188,6 @@ void handle_accepted(
 
 #include "rclcpp_components/register_node_macro.hpp"
 RCLCPP_COMPONENTS_REGISTER_NODE(robot_nav::NavigationServer)
+
+
+
