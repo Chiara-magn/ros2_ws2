@@ -1,9 +1,9 @@
 #include <memory>
 #include <chrono>
 
+#include "geometry_msgs/msg/pose_stamped.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
-
 #include "robot_nav/action/move_to_pose.hpp"
 
 namespace robot_nav
@@ -24,19 +24,23 @@ public:
 
     RCLCPP_INFO(this->get_logger(), "MoveToPose client ready");
 
-    timer_ = this->create_wall_timer(
-      std::chrono::seconds(2),
-      std::bind(&MoveToPoseClient::send_goal, this));
+    // added subscription to /goal_pose 
+    goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+    "/goal_pose",
+    10,
+    std::bind(&MoveToPoseClient::goal_callback, this, std::placeholders::_1)
+    );
+
   }
 
 private:
   rclcpp_action::Client<MoveToPose>::SharedPtr client_;
   rclcpp::TimerBase::SharedPtr timer_;
+  // added subscription to /goal_pose 
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_sub_;
 
-  void send_goal()
+  void send_goal(double x,double y)
   {
-    timer_->cancel();
-
     if (!client_->wait_for_action_server(std::chrono::seconds(5)))
     {
       RCLCPP_ERROR(this->get_logger(), "Action server not available");
@@ -49,14 +53,15 @@ private:
     goal_msg.target_pose.header.frame_id = "odom";  
     goal_msg.target_pose.header.stamp = this->now();
 
-    goal_msg.target_pose.pose.position.x = 2.0;
-    goal_msg.target_pose.pose.position.y = 1.0;
+    goal_msg.target_pose.pose.position.x = x;
+    goal_msg.target_pose.pose.position.y = y;
     goal_msg.target_pose.pose.position.z = 0.0;
 
     goal_msg.target_pose.pose.orientation.w = 1.0;
 
+    // goal positions are based on UI data
     RCLCPP_INFO(this->get_logger(),
-      "Sending goal: x=2.0 y=1.0");
+    "Sending goal: x = %.2f y = %.2f", x, y);
 
     auto options = rclcpp_action::Client<MoveToPose>::SendGoalOptions();
 
@@ -74,6 +79,15 @@ private:
   }
 
   // callbacks
+  // added callback to send goals recived by navigation_ui
+    void goal_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+  {
+      // estrai x, y
+      double x = msg->pose.position.x;
+      double y = msg->pose.position.y;
+
+      send_goal(x, y);
+  }
 
   void goal_response_callback(
     std::shared_ptr<GoalHandleMoveToPose> goal_handle)

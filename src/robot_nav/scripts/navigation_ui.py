@@ -30,10 +30,10 @@ class NavigationUI(Node):
                 print("\n--- Insert goal ---")
                 x = float(input("x: "))
                 y = float(input("y: "))
-                theta = float(input("theta (ignored for now or quaternion later): "))
+            #   theta = float(input("theta (ignored for now or quaternion later): "))
 
                 msg = PoseStamped()
-                msg.header.frame_id = "map"
+                msg.header.frame_id = "odom"
                 msg.header.stamp = self.get_clock().now().to_msg()
 
                 msg.pose.position.x = x
@@ -45,8 +45,8 @@ class NavigationUI(Node):
                 self.publisher_.publish(msg)
 
                 self.get_logger().info(
-                    f"Goal sent: x={x}, y={y}, theta={theta}"
-                )
+                    f"Goal sent: x={x}, y={y}" 
+                ) #theta={theta}
 
         except KeyboardInterrupt:
             self.get_logger().info("UI stopped")
