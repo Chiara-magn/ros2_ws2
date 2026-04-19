@@ -28,7 +28,7 @@ public:
       std::bind(&MoveToPoseClient::goal_callback, this, std::placeholders::_1)
     );
 
-    RCLCPP_INFO(this->get_logger(), "MoveToPose client ready");
+    RCLCPP_INFO(this->get_logger(), "\033[1;36mMoveToPose client ready\033[0m");
   }
 
 private:
@@ -78,7 +78,7 @@ private:
       [this](const GoalHandleMoveToPose::WrappedResult & result)
       {
         if (result.code == rclcpp_action::ResultCode::SUCCEEDED)
-          RCLCPP_INFO(this->get_logger(), "Goal succeeded!");
+          RCLCPP_INFO(this->get_logger(), "\033[1;32m[NavigationServer] Goal succeeded\033[0m");
         else if (result.code == rclcpp_action::ResultCode::ABORTED)
           RCLCPP_ERROR(this->get_logger(), "Goal aborted");
         else if (result.code == rclcpp_action::ResultCode::CANCELED)

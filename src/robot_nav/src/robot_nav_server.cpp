@@ -42,7 +42,7 @@ public:
       std::bind(&NavigationServer::handle_accepted, this, std::placeholders::_1)
     );
 
-    RCLCPP_INFO(this->get_logger(), "NavigationServer active");
+    RCLCPP_INFO(this->get_logger(), "\033[1;32mNavigationServer active\033[0m");
   }
 
 private:
