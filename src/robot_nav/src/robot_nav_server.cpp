@@ -2,6 +2,7 @@
 #include <thread>
 #include <chrono>
 #include <cmath>
+#include <atomic>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
@@ -26,8 +27,6 @@ public:
   explicit NavigationServer(const rclcpp::NodeOptions & options)
   : Node("navigation_server", options)
   {
-    RCLCPP_INFO(this->get_logger(), "NavigationServer active");
-
     cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
@@ -42,11 +41,15 @@ public:
       std::bind(&NavigationServer::handle_cancel, this, std::placeholders::_1),
       std::bind(&NavigationServer::handle_accepted, this, std::placeholders::_1)
     );
+
+    RCLCPP_INFO(this->get_logger(), "NavigationServer active");
   }
 
 private:
   rclcpp_action::Server<MoveToPose>::SharedPtr action_server_;
   std::shared_ptr<GoalHandleMoveToPose> current_goal_handle_;
+
+  std::atomic<bool> running_{false};
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   double current_x_ = 0.0;
@@ -60,7 +63,6 @@ private:
     current_x_ = msg->pose.pose.position.x;
     current_y_ = msg->pose.pose.position.y;
 
-    // tf2 yaw extraction
     tf2::Quaternion q(
       msg->pose.pose.orientation.x,
       msg->pose.pose.orientation.y,
@@ -91,96 +93,121 @@ private:
     const std::shared_ptr<GoalHandleMoveToPose> goal_handle)
   {
     (void)goal_handle;
-
     RCLCPP_INFO(this->get_logger(), "Cancel request");
+
+    running_ = false;  // stop thread
+    stop_robot();
+
     return rclcpp_action::CancelResponse::ACCEPT;
   }
 
   void handle_accepted(
     const std::shared_ptr<GoalHandleMoveToPose> goal_handle)
   {
-    if (current_goal_handle_ && current_goal_handle_->is_active()) {
-      auto result = std::make_shared<MoveToPose::Result>();
-      result->success = false;
-      current_goal_handle_->abort(result);
-
-      RCLCPP_WARN(this->get_logger(),
-        "Previous goal aborted due to preemption");
-    }
+    // stop previous goal thread
+    running_ = false;
+    stop_robot();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     current_goal_handle_ = goal_handle;
+    running_ = true;
 
     std::thread{
       std::bind(&NavigationServer::execute, this, goal_handle)
     }.detach();
   }
 
+  void stop_robot()
+  {
+    geometry_msgs::msg::Twist stop;
+    cmd_vel_pub_->publish(stop);
+  }
+
   void execute(
     const std::shared_ptr<GoalHandleMoveToPose> goal_handle)
   {
-    RCLCPP_INFO(this->get_logger(), "Goal execution started");
-
     const auto goal = goal_handle->get_goal();
     auto feedback = std::make_shared<MoveToPose::Feedback>();
     auto result = std::make_shared<MoveToPose::Result>();
 
     rclcpp::Rate rate(10);
 
-    while (rclcpp::ok())
+    while (rclcpp::ok() && running_)
     {
       if (goal_handle->is_canceling())
       {
-        geometry_msgs::msg::Twist stop;
-        cmd_vel_pub_->publish(stop);
-
+        running_ = false;
+        stop_robot();
         result->success = false;
         goal_handle->canceled(result);
         return;
       }
 
-      if (current_goal_handle_.get() != goal_handle.get()) {
-        geometry_msgs::msg::Twist stop;
-        cmd_vel_pub_->publish(stop);
-        return;
-      }
-
-      double x = current_x_;
-      double y = current_y_;
-
-      double goal_x = goal->target_pose.pose.position.x;
-      double goal_y = goal->target_pose.pose.position.y;
-
-      double dx = goal_x - x;
-      double dy = goal_y - y;
-
+      double dx = goal->target_pose.pose.position.x - current_x_;
+      double dy = goal->target_pose.pose.position.y - current_y_;
       double distance = std::sqrt(dx*dx + dy*dy);
 
-      feedback->current_pose.header.frame_id = "odom";
-      feedback->current_pose.pose.position.x = x;
-      feedback->current_pose.pose.position.y = y;
+      feedback->current_pose.pose.position.x = current_x_;
+      feedback->current_pose.pose.position.y = current_y_;
       goal_handle->publish_feedback(feedback);
 
       if (distance < 0.1)
       {
-        geometry_msgs::msg::Twist stop;
-        cmd_vel_pub_->publish(stop);
+        // ORIENTAZIONE FINALE
+        tf2::Quaternion q_goal(
+          goal->target_pose.pose.orientation.x,
+          goal->target_pose.pose.orientation.y,
+          goal->target_pose.pose.orientation.z,
+          goal->target_pose.pose.orientation.w
+        );
 
-        result->success = true;
-        goal_handle->succeed(result);
-        RCLCPP_INFO(this->get_logger(), "Goal reached!");
+        double roll_g, pitch_g, goal_yaw;
+        tf2::Matrix3x3(q_goal).getRPY(roll_g, pitch_g, goal_yaw);
+
+        double yaw_error = goal_yaw - current_yaw_;
+
+        while (yaw_error > M_PI) yaw_error -= 2*M_PI;
+        while (yaw_error < -M_PI) yaw_error += 2*M_PI;
+
+        rclcpp::Rate rate_yaw(20);
+
+        while (std::abs(yaw_error) > 0.05 && running_)
+        {
+          geometry_msgs::msg::Twist cmd;
+          cmd.angular.z = std::clamp(1.0 * yaw_error, -1.0, 1.0);
+          cmd_vel_pub_->publish(cmd);
+
+          yaw_error = goal_yaw - current_yaw_;
+          while (yaw_error > M_PI) yaw_error -= 2*M_PI;
+          while (yaw_error < -M_PI) yaw_error += 2*M_PI;
+
+          rate_yaw.sleep();
+        }
+
+        stop_robot();
+
+        if (running_)
+        {
+          result->success = true;
+          goal_handle->succeed(result);
+        }
+
+        running_ = false;
         return;
       }
 
       double angle_to_goal = std::atan2(dy, dx);
 
       geometry_msgs::msg::Twist cmd;
-      cmd.linear.x = 0.5 * distance;
-      cmd.angular.z = 1.0 * (angle_to_goal - current_yaw_);
+      cmd.linear.x = std::clamp(0.5 * distance, -0.5, 0.5);
+      cmd.angular.z = std::clamp(1.0 * (angle_to_goal - current_yaw_), -1.0, 1.0);
 
       cmd_vel_pub_->publish(cmd);
 
       rate.sleep();
     }
+
+    stop_robot();
   }
 };
 
@@ -188,6 +215,5 @@ private:
 
 #include "rclcpp_components/register_node_macro.hpp"
 RCLCPP_COMPONENTS_REGISTER_NODE(robot_nav::NavigationServer)
-
 
 
