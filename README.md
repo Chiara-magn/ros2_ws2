@@ -1,54 +1,69 @@
-# **Research Track 2: Robot Navigation Assignment **
-This project implements a basic ROS2 robot navigation stack with a textual UI. 
-The system allows the user to send target poses to the robot, handles goal execution through an action-based architecture, performs proportional control for motion and final orientation alignment, supports preemption, and provides a UI for sending goals and STOP commands.
-### **System structure:**
-### Goal UI interface Node
-- Python interface `navigation_ui.py`
-### Components
-- C++ Action Server that executes a MoveToPose action `robot_nav_server.cpp` 
-- C++ Action Client `move_to_pose_client.cpp` 
+# **Research Track 2: Robot Navigation Assignment**
+
+This project implements a basic ROS2 robot navigation stack with a textual UI. The system allows the user to send target poses to the robot, handles goal execution through an action-based architecture, performs proportional control for motion and final orientation alignment, supports preemption, and provides a UI for sending goals and STOP commands.
+
 ---
 
-## **Description**:
-### **UI Node (Python)**  
+## **System Structure**
+
+### Goal UI Interface Node
+- Python interface: `navigation_ui.py`
+
+### Components
+- C++ Action Server that executes a `MoveToPose` action: `robot_nav_server.cpp`
+- C++ Action Client: `move_to_pose_client.cpp`
+
+---
+
+## **Description**
+
+### **UI Node (Python)**
+
 This node provides a keyboard‑based interface to send the robot goal poses and stop the robot.
 
-The user can: 
+The user can:
+
 - Send a navigation goal (`g`) by entering:
   - target **x** position
   - target **y** position
-  - target **orientation** with choice between units: (`d` for degrees, `r` for radians)
+  - target **orientation**, choosing the unit (`d` for degrees, `r` for radians)
 
-- Stop the robot immediately (`s`)
+- Stop the robot immediately (`s`)  
   The STOP command cancels the current action goal and forces the robot to halt.
 
-- Send multiple goals in sequence
+- Send multiple goals in sequence  
   New goals **preempt** the previous one (the server cancels the old goal safely).
 
-- See feedback in real time
+- See feedback in real time  
   The UI prints the goal sent, while the server prints the robot’s current pose during execution.
 
-The UI automatically converts degrees to radians.
-Commands are published to `/goal_pose`
+The UI automatically converts degrees to radians.  
+Commands are published to `/goal_pose`.
+
 ---
 
-### **Action Client (C++)** 
-Receives goals from UI Node and send them to Action Server through action `MoveToPose`
+### **Action Client (C++)**
+
+Receives goals from the UI Node and sends them to the Action Server through the `MoveToPose` action.
 
 This component:
+
 - Subscribes to `/goal_pose`
 - Converts the message into a `MoveToPose` action goal
 - Sends the goal to the Action Server
 - Handles feedback and result callbacks
 
 It acts as a bridge between the UI and the Action Server.
+
 ---
 
-### **Action Server (C++)** 
+### **Action Server (C++)**
+
 Implements the `MoveToPose` action.
 
 Provided operations:
-- Receives a goal pose *(x, y, yaw)*
+
+- Receives a goal pose (x, y, yaw)
 - Moves the robot toward the goal using a proportional controller
 - Aligns the robot to the final orientation
 - Publishes feedback (current position)
@@ -58,9 +73,12 @@ Provided operations:
 
 The server subscribes to `/odom` and publishes velocity commands to `/cmd_vel`.
 
+---
+
 ## **Actions**
 
 ### `MoveToPose.action`
+
 ```
 geometry_msgs/PoseStamped target_pose
 ---
@@ -127,8 +145,8 @@ python3 navigation_ui.py
 
 Commands:
 
-g → send goal
-s → STOP robot
+- `g` → send goal  
+- `s` → STOP robot  
 
 When sending a goal, the UI will ask for:
 - x position
