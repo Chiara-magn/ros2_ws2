@@ -101,6 +101,7 @@ ros2 launch robot_nav start_components.launch.py
 ```
 This launch file does **not** start the UI node, since it requires keyboard input and must be run manually.
 
+In RViz, set the Fixed Frame to map and enable the TF display to visualize the full TF2 tree
 ---
 
 ## **How to Run the Full System**
@@ -111,7 +112,7 @@ Terminal 1:
 ```bash
 cd ~/Desktop/ros2_ws2
 rm -rf build install log
-colcon build --packages-select robot_nav
+colcon build 
 source install/setup.bash
 ```
 

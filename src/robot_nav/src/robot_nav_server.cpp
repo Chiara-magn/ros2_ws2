@@ -15,6 +15,10 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 
+#include <tf2_ros/static_transform_broadcaster.h>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+
+
 namespace robot_nav
 {
 
@@ -42,6 +46,8 @@ public:
       std::bind(&NavigationServer::handle_accepted, this, std::placeholders::_1)
     );
 
+    static_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
+
     RCLCPP_INFO(this->get_logger(), "\033[1;32mNavigationServer active\033[0m");
   }
 
@@ -57,6 +63,8 @@ private:
   double current_yaw_ = 0.0;
 
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
+
+  std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_broadcaster_;
 
   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
   {
@@ -95,7 +103,7 @@ private:
     (void)goal_handle;
     RCLCPP_INFO(this->get_logger(), "Cancel request");
 
-    running_ = false;  // stop thread
+    running_ = false;  
     stop_robot();
 
     return rclcpp_action::CancelResponse::ACCEPT;
@@ -104,7 +112,6 @@ private:
   void handle_accepted(
     const std::shared_ptr<GoalHandleMoveToPose> goal_handle)
   {
-    // stop previous goal thread
     running_ = false;
     stop_robot();
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -130,6 +137,19 @@ private:
     auto feedback = std::make_shared<MoveToPose::Feedback>();
     auto result = std::make_shared<MoveToPose::Result>();
 
+    geometry_msgs::msg::TransformStamped tf_goal;
+    tf_goal.header.stamp = this->now();
+    tf_goal.header.frame_id = "map";
+    tf_goal.child_frame_id = "goal_frame"; 
+
+    tf_goal.transform.translation.x = goal->target_pose.pose.position.x;
+    tf_goal.transform.translation.y = goal->target_pose.pose.position.y;
+    tf_goal.transform.translation.z = 0.0;
+
+    tf_goal.transform.rotation = goal->target_pose.pose.orientation;
+
+    static_broadcaster_->sendTransform(tf_goal);
+
     rclcpp::Rate rate(10);
 
     while (rclcpp::ok() && running_)
@@ -153,7 +173,6 @@ private:
 
       if (distance < 0.1)
       {
-        // ORIENTAZIONE FINALE
         tf2::Quaternion q_goal(
           goal->target_pose.pose.orientation.x,
           goal->target_pose.pose.orientation.y,
@@ -215,5 +234,3 @@ private:
 
 #include "rclcpp_components/register_node_macro.hpp"
 RCLCPP_COMPONENTS_REGISTER_NODE(robot_nav::NavigationServer)
-
-
